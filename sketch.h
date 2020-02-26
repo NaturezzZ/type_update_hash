@@ -7,15 +7,15 @@ uint32_t po(unsigned x){
 template <const int tuple_len>
 class Sketch{
 public:
-    unsigned TYPE_BIT, HASH_NUM, BUCK_NUM, TRACE_LEN, TYPE_NUM;
+    unsigned TYPE_BIT, HASH_NUM, BUCK_NUM, TRACE_LEN, TYPE_NUM, TH;
     BOBHash32 typehash;
     BOBHash32 * skehash;
     uint16_t * bucket;
-    Sketch(const unsigned int typebit, const unsigned int hashnum, const unsigned int bucknum, const unsigned int tracelen){
+    Sketch(const unsigned int typebit, const unsigned int hashnum, const unsigned int bucknum, const unsigned int tracelen, const unsigned int threshold){
     /*
     typebit is k from 2^k=typenum, hashnum is number of hash functions, bucknum is number of buckets
     */
-        TYPE_BIT = typebit, HASH_NUM = hashnum, BUCK_NUM = bucknum, TRACE_LEN = tracelen;
+        TYPE_BIT = typebit, HASH_NUM = hashnum, BUCK_NUM = bucknum, TRACE_LEN = tracelen, TH = threshold;
         TYPE_NUM = po(TYPE_BIT);
 
         bucket = new uint16_t[BUCK_NUM];
@@ -32,7 +32,6 @@ public:
         return typehash.run((char*)key, tuple_len) % TYPE_NUM;
     }
     void insert(uint8_t key[]){
-        unsigned th = TYPE_BIT / 2;
         unsigned cntsame = 0;
         unsigned cntzero = 0;
         unsigned tmp = 0;
@@ -46,30 +45,8 @@ public:
         }
 
         //complex insert rules, with bugs on high possibility
-        if(cntsame < th && cntsame != 0){
-            if(cntzero != 0){
-                bucket[tmp] = (uint16_t) tmptype;
-                bucket[tmp] <<= (16-TYPE_BIT);
-                bucket[tmp] += 1;
-            }
-            else{
-                for(int i = 0; i < HASH_NUM; i++){
-                    uint32_t pos = skehash[i].run((char*)key, tuple_len) % BUCK_NUM;
-                    uint32_t postype = (bucket[pos] >> (16-TYPE_BIT));
-                    if (tmptype == postype){
-                        bucket[pos] += 1;
-                    }
-                }
-
-            }
-        }
-        else if (cntsame == 0){
-            for(int i = 0; i < HASH_NUM; i++){
-                uint32_t pos = skehash[i].run((char*)key, tuple_len) % BUCK_NUM;
-                bucket[pos] += 1;
-            }
-        }
-        else{
+        
+        if (cntsame >= TH){
             for(int i = 0; i < HASH_NUM; i++){
                 uint32_t pos = skehash[i].run((char*)key, tuple_len) % BUCK_NUM;
                 uint32_t postype = (bucket[pos] >> (16-TYPE_BIT));
@@ -78,11 +55,46 @@ public:
                 }
             }
         }
+        else{
+            if(cntzero != 0){
+                for(int i = 0; i < HASH_NUM && cntsame < TH && cntzero > 0; i++){
+                    uint32_t pos = skehash[i].run((char*)key, tuple_len) % BUCK_NUM;
+                    uint32_t postype = (bucket[pos] >> (16-TYPE_BIT));
+                    if (tmptype == postype && bucket[pos] != 0){
+                        bucket[pos] += 1;
+                    }
+                    if(bucket[pos]==0){
+                        bucket[pos] = (uint16_t) tmptype;
+                        bucket[pos] <<= (16-TYPE_BIT);
+                        bucket[pos] += 1;
+                        cntsame += 1;
+                        cntzero -= 1;
+                    }
+                }
+            }
+            else{
+                if(cntsame == 0){
+                    for(int i = 0; i < HASH_NUM; i++){
+                        uint32_t pos = skehash[i].run((char*)key, tuple_len) % BUCK_NUM;
+                        bucket[pos] += 1;
+                    }
+                }
+                else{
+                    for(int i = 0; i < HASH_NUM; i++){
+                        uint32_t pos = skehash[i].run((char*)key, tuple_len) % BUCK_NUM;
+                        uint32_t postype = (bucket[pos] >> (16-TYPE_BIT));
+                        if (tmptype == postype){
+                            bucket[pos] += 1;
+                        }
+                    }
+                }
+            }
+        }
     } 
 
     uint16_t query(uint8_t key[]){
-        uint16_t classmin = 0x3fff;
-        uint16_t allmin = 0x3fff;
+        uint16_t classmin = 0x3fffU;
+        uint16_t allmin = 0x3fffU;
         uint32_t keytype = get_type(key) % TYPE_NUM;
         for(int i = 0; i < HASH_NUM; i++){
             uint32_t pos = skehash[i].run((char*)key, tuple_len) % BUCK_NUM;
@@ -90,7 +102,6 @@ public:
             if(keytype == postype){
                 if((0x3fff & bucket[pos]) < classmin ) classmin = (0x3fff & bucket[pos]);
             }
-            //cout << "..."<< bucket[pos] << endl;
             if((0x3fff & bucket[pos]) < allmin) {allmin = (0x3fff & bucket[pos]);
             }
         }
@@ -111,15 +122,9 @@ public:
     BOBHash32 * skehash;
     uint16_t * bucket;
     CMSketch(const int hashnum, const int bucknum, const int tracelen):HASH_NUM(hashnum), BUCK_NUM(bucknum), TRACE_LEN(tracelen){
-        //initialize hash functions and buckets
-        //if(bucket){
-         //   delete[] bucket;
-        //    bucket = NULL;
-        //}
-        //cout << "lalala" << endl;
+
         bucket = new uint16_t[BUCK_NUM];
         memset(bucket, 0, sizeof(uint16_t)*BUCK_NUM);
-        //cout << sizeof(bucket) << endl;
         skehash = new BOBHash32[HASH_NUM];
         unsigned seed = rand() % MAX_PRIME32;
         for(int i = 0; i < HASH_NUM; i++){
@@ -131,17 +136,14 @@ public:
         for(int i = 0; i < HASH_NUM; i++){
             uint32_t pos = skehash[i].run((char*)key, tuple_len) % BUCK_NUM;
             bucket[pos] += 1;
-            //cout << pos << ',' << bucket[pos] << ',';
-            //system("pause");
+
         }
-        //for(int i = 0; i < BUCK_NUM; i++)cout << bucket[i] << ',';
-        //cout << endl;
+
     }
     uint16_t query(uint8_t key[]){
         uint16_t Min = 0xffff;
         for(int i = 0;i < HASH_NUM; i++){
             uint32_t pos = skehash[i].run((char*)key, tuple_len) % BUCK_NUM;
-            //cout << "cmquery" << pos << endl;
             if(bucket[pos] < Min) Min = bucket[pos];
         }
         return Min;

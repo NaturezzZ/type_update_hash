@@ -8,10 +8,10 @@ using namespace std;
 #define SZ(x) (int((x).size()))
 #define All(x) (x).begin(), (x).end()
 typedef pair<string, int> psi;
-const int typebit = 2, hashnum = 4, bucknum = 50000;
+const int typebit = 2, hashnum = 2, bucknum = 50000;
 const int TRACE_LEN = 26;
 const int TUPLE_LEN = 13;
-const int WIN = 50000;
+const int WIN = 500000;
 #define rep(i,a,b) for(int (i)=(a);(i)<=(b);(i)++)
 #define rep2(i,a,b) for(int (i)=(a);(i)<(b);(i)++)
 
@@ -30,7 +30,7 @@ int main() {
 	uint8_t key[TRACE_LEN];
 	rep2 (i, 0, 20){
 		cout << i << endl;
-		sketch = new Sketch<TUPLE_LEN>(typebit, hashnum, bucknum, TRACE_LEN);
+		sketch = new Sketch<TUPLE_LEN>(typebit, hashnum, bucknum, TRACE_LEN, hashnum/2);
 		cmsketch = new CMSketch<TUPLE_LEN>(hashnum, bucknum, TRACE_LEN);
 		rep2(j, 0, WIN) strrep[j].clear();
 		strmap.clear();
